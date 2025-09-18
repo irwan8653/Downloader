@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Universal Downloader — Spotify / TikTok / Instagram</title>
+  <style>
+    :root{--bg:#0b1020;--card:#10172a;--text:#e5e7eb;--muted:#94a3b8;--primary:#60a5fa;--primary-600:#3b82f6;--border:#1f2937;--ok:#16a34a;--err:#ef4444;--radius:14px;--shadow:0 8px 24px rgba(0,0,0,.45)}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,Segoe UI,Roboto,Arial}
+    .wrap{max-width:900px;margin:auto;padding:22px}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+    .brand{font-weight:800;letter-spacing:.2px}.pill{display:inline-block;padding:2px 8px;border:1px solid var(--border);border-radius:999px;font-size:12px;color:var(--muted)}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}
+    .stack{display:grid;gap:12px}
+    .row{display:grid;grid-template-columns:1fr 180px;gap:10px}
+    @media (max-width:640px){.row{grid-template-columns:1fr}}
+    .input-bar{display:grid;grid-template-columns:1fr 140px;gap:10px}
+    @media (max-width:560px){.input-bar{grid-template-columns:1fr}}
+    select,input[type="url"]{padding:12px;border-radius:10px;border:1px solid var(--border);background:#0b1226;color:var(--text)}
+    .btn{padding:12px 16px;border-radius:10px;border:1px solid transparent;background:var(--primary);color:#fff;cursor:pointer}
+    .btn:hover{background:var(--primary-600)}.btn[disabled]{opacity:.7;cursor:progress}
+    .status{font-size:14px}.ok{color:var(--ok)}.err{color:var(--err)}.muted{color:var(--muted)}
+    .result{display:none}.grid{display:grid;gap:12px;grid-template-columns:1fr 1fr}
+    @media (max-width:840px){.grid{grid-template-columns:1fr}}
+    .kv{display:grid;grid-template-columns:120px 1fr;gap:8px;font-size:15px}
+    .kv div{padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:#0b1226;overflow:auto}
+    .thumb img{max-height:110px;border-radius:10px;border:1px solid var(--border)}
+    .downloads{display:grid;gap:10px}
+    .dl-item{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--border);border-radius:10px;background:#0b1226;padding:10px}
+    .dl-meta{font-size:14px;color:var(--muted)}
+    footer{margin-top:18px;color:var(--muted);font-size:14px;text-align:center}
+    .loader{display:none;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
+    .dot{width:8px;height:8px;border-radius:50%;background:var(--primary);animation:bounce 1s infinite}
+    .dot:nth-child(2){animation-delay:.15s}.dot:nth-child(3){animation-delay:.3s}
+    @keyframes bounce{0%,80%,100%{transform:scale(0)}40%{transform:scale(1)}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">Universal Downloader</div>
+      <div class="pill">Spotify • TikTok • Instagram</div>
+    </header>
+
+    <div class="card stack">
+      <div class="row">
+        <select id="platform">
+          <option value="auto">Auto (deteksi dari URL)</option>
+          <option value="spotify">Spotify</option>
+          <option value="tiktok">TikTok</option>
+          <option value="instagram">Instagram</option>
+        </select>
+        <div class="loader" id="loader"><span class="dot"></span><span class="dot"></span><span class="dot"></span> Memproses…</div>
+      </div>
+
+      <div class="input-bar">
+        <input id="url" type="url" placeholder="Tempel URL Spotify / TikTok / Instagram..." />
+        <button id="btn" class="btn">Proses</button>
+      </div>
+
+      <div id="status" class="status muted">Tempel URL lalu klik Proses.</div>
+
+      <div id="result" class="result">
+        <div class="grid">
+          <section>
+            <h3>Detail</h3>
+            <div class="kv">
+              <div class="mono">title</div><div id="kv-title"></div>
+              <div class="mono">type</div><div id="kv-type"></div>
+              <div class="mono">author</div><div id="kv-author"></div>
+              <div class="mono">durasi</div><div id="kv-durasi"></div>
+              <div class="mono">image</div>
+              <div id="kv-image"><span class="thumb" id="thumb"></span> <a id="imgLink" href="#" target="_blank" rel="noopener"></a></div>
+            </div>
+          </section>
+
+          <section>
+            <h3>Unduhan (Kualitas Terbaik)</h3>
+            <div id="downloads" class="downloads"></div>
+          </section>
+        </div>
+      </div>
+
+      <div class="status muted">tempel aelah langsung.</div>
+    </div>
+
+    <footer>© <span id="year"></span> · wan</footer>
+  </div>
+
+  <script>
+    // ========= Endpoints =========
+    const ENDPOINTS = {
+      spotify:   'https://api.sxtream.xyz/downloader/spotify',
+      tiktok:    'https://api.sxtream.xyz/downloader/tiktok',
+      instagram: 'https://api.sxtream.xyz/downloader/instagram',
+    };
+
+    // ========= Helpers =========
+    const $=(s,r=document)=>r.querySelector(s);
+    $('#year').textContent=new Date().getFullYear();
+
+    const urlEl=$('#url'), btn=$('#btn'), statusEl=$('#status');
+    const platformSel=$('#platform'), loader=$('#loader');
+    const resultBox=$('#result'), downloadsBox=$('#downloads');
+    const kv={ title:$('#kv-title'), type:$('#kv-type'), author:$('#kv-author'),
+               durasi:$('#kv-durasi'), imageA:$('#imgLink'), imageThumb:$('#thumb') };
+
+    const RX={
+      spotify:/^https?:\/\/open\.spotify\.com\/(track|album|playlist)\//i,
+      tiktok:/^https?:\/\/([a-z0-9-]+\.)*tiktok\.com\//i,
+      instagram:/^https?:\/\/([a-z0-9-]+\.)*instagram\.com\//i,
+    };
+
+    function setStatus(m,c='muted'){statusEl.textContent=m;statusEl.className='status '+c}
+    function showLoader(s){loader.style.display=s?'inline-flex':'none'}
+    function msToHMS(ms){const s=Math.max(0,Math.floor(ms/1000)),h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return(h?String(h).padStart(2,'0')+':':'')+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')}
+    function detectPlatform(u){ if(RX.spotify.test(u))return'spotify'; if(RX.tiktok.test(u))return'tiktok'; if(RX.instagram.test(u))return'instagram'; return null; }
+    function choosePlatform(u,sel){ if(sel && sel!=='auto') return sel; return detectPlatform(u)||'spotify'; }
+
+    function toText(v){
+      if(v==null) return '';
+      if(typeof v==='string') return v;
+      if(Array.isArray(v)) return v.filter(Boolean).map(toText).join(', ');
+      if(typeof v==='object') return v.nickname||v.username||v.name||v.title||v.owner||v.author||JSON.stringify(v);
+      return String(v);
+    }
+
+    function collectUrlsDeep(node, acc=new Set()){
+      const push = (s)=>{ const re=/https?:\/\/[^\s"'<>)\]}]+/g; let m; while((m=re.exec(s))){ acc.add(m[0]); } };
+      if(node==null) return acc;
+      if(typeof node==='string') push(node);
+      else if(Array.isArray(node)) node.forEach(v=>collectUrlsDeep(v,acc));
+      else if(typeof node==='object') Object.values(node).forEach(v=>collectUrlsDeep(v,acc));
+      return acc;
+    }
+
+    function pickDurationMs(raw){
+      const c=[]; const walk=(o)=>{ if(o&&typeof o==='object'){ for(const [k,v] of Object.entries(o)){ const key=k.toLowerCase();
+        if(/duration|durasi|play_time|length/.test(key)){ if(typeof v==='number') c.push(v); else if(typeof v==='string' && /^\d+(\.\d+)?$/.test(v)) c.push(Number(v)); }
+        if(typeof v==='object') walk(v);
+      }}};
+      walk(raw); const n=c.find(x=>x>0)||0; return n? (n<1000?Math.round(n*1000):Math.round(n)) : 0;
+    }
+
+    const IGNORE_PARAMS = new Set(['a','ch','cr','dr','er','lr','net','cd','cv','qs','vvpl','l','btag','ft','s','_','x-params','oh','oe']);
+    function canonicalKey(href){
+      try{
+        const u = new URL(href);
+        const keep = new URLSearchParams();
+        const q = new URLSearchParams(u.search);
+        for (const [k,v] of q) { if (!IGNORE_PARAMS.has(k)) keep.append(k,v); }
+        const mime = keep.get('mime_type') || '';
+        const br = keep.get('br') || keep.get('bt') || '';
+        return `${u.origin}${u.pathname}|mime=${mime}|br=${br}`;
+      }catch{ return href.split('?')[0]; }
+    }
+    function extractBitrateKbps(href){
+      try{
+        const q = new URL(href).searchParams;
+        const br = q.get('br') || q.get('bt');
+        if (br && /^\d+$/.test(br)) return Math.round(Number(br));
+      }catch{}
+      return null;
+    }
+    function classifyAllowed(href){
+      const s = href.toLowerCase();
+      const isMp3 = /\.(mp3|m4a)(\?|$)/.test(s) || /mime_type=audio|audio=1/.test(s);
+      const isMp4 = /\.(mp4)(\?|$)/.test(s) || s.includes('mime_type=video_mp4') || (s.includes('tiktokcdn.com') && s.includes('/video/'));
+      if (isMp3) return { kind:'audio', label:'Audio (MP3/M4A)', mime:'audio/mpeg', bitrate:0 };
+      if (isMp4) {
+        const br = extractBitrateKbps(href) || 0;
+        return { kind:'video', label:'Video (MP4)', mime:'video/mp4', bitrate: br };
+      }
+      return null;
+    }
+
+    function normalize(platform, raw){
+      const r=raw?.result || raw?.data || raw || {};
+      const o={ title:r.title||r.name||r.caption||r.track||'',
+                type:r.type||platform,
+                author: toText(r.author||r.uploader||r.owner||r.artist||r.artists||r.user||''),
+                duration_ms: pickDurationMs(r),
+                image: r.image || r.thumbnail || r.cover || r.thumb || '',
+                files: [] };
+
+      const all = Array.from(collectUrlsDeep(r));
+
+      let bestVideo=null, bestAudio=null;
+      const seen = new Set();
+
+      for (const href of all){
+        const meta = classifyAllowed(href);
+        if (!meta) continue;
+        const key = canonicalKey(href);
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        if (meta.kind==='video'){
+          if (!bestVideo || (meta.bitrate||0) > (bestVideo.meta.bitrate||0)){
+            bestVideo = { href, meta };
+          }
+        } else if (meta.kind==='audio'){
+          if (!bestAudio) bestAudio = { href, meta };
+        }
+      }
+
+      const out = [];
+      if (bestVideo){
+        out.push({ label: 'Video (MP4)', mime: bestVideo.meta.mime, url: bestVideo.href });
+      }
+      if (bestAudio){
+        out.push({ label: 'Audio (MP3/M4A)', mime: bestAudio.meta.mime, url: bestAudio.href });
+      }
+      o.files = out;
+      return o;
+    }
+
+    async function callApi(platform, url){
+      const ep=new URL(ENDPOINTS[platform]);
+      ep.searchParams.set('url',url);
+      const res=await fetch(ep.toString(),{headers:{Accept:'application/json'}});
+      let data={}; try{ data=await res.json(); }catch{}
+      if(!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+      return data;
+    }
+
+    function render(o){
+      resultBox.style.display='block';
+      kv.title.textContent=o.title||'-';
+      kv.type.textContent=o.type||'-';
+      kv.author.textContent=o.author||'-';
+      kv.durasi.textContent=o.duration_ms?`${o.duration_ms} ms (${msToHMS(o.duration_ms)})`:'-';
+      kv.imageA.textContent=o.image||''; kv.imageA.href=o.image||'#';
+      kv.imageThumb.innerHTML=o.image?`<img src="${o.image}" alt="cover">`:'';
+
+      downloadsBox.innerHTML='';
+      if(!o.files.length){
+        downloadsBox.innerHTML='<div class="dl-item"><div>Tidak ada link unduhan (MP4/MP3 tidak ditemukan).</div></div>';
+        return;
+      }
+      for (const f of o.files){
+        const div=document.createElement('div'); div.className='dl-item';
+        const meta=document.createElement('div'); meta.innerHTML=`<div><strong>${f.label}</strong></div><div class="dl-meta">${f.mime}</div>`;
+        const a=document.createElement('a'); a.className='btn'; a.href=f.url; a.target='_blank'; a.rel='noopener'; a.textContent='Download';
+        div.append(meta,a); downloadsBox.appendChild(div);
+      }
+    }
+
+    async function handleProcess(){
+      const u=urlEl.value.trim();
+      if(!u){ setStatus('URL kosong','err'); return; }
+      const platform=choosePlatform(u,platformSel.value);
+      if(platform==='spotify' && !RX.spotify.test(u)){ setStatus('URL Spotify tidak valid','err'); return; }
+      if(platform==='tiktok' && !RX.tiktok.test(u)){ setStatus('URL TikTok tidak valid','err'); return; }
+      if(platform==='instagram' && !RX.instagram.test(u)){ setStatus('URL Instagram tidak valid','err'); return; }
+
+      setStatus('Memproses…'); showLoader(true); btn.disabled=true;
+      try{
+        const raw=await callApi(platform,u);
+        const obj=normalize(platform,raw);
+        render(obj);
+        setStatus('Berhasil','ok');
+      }catch(e){
+        resultBox.style.display='none'; downloadsBox.innerHTML='';
+        setStatus('Gagal: '+(e?.message||e),'err');
+      }finally{
+        showLoader(false); btn.disabled=false;
+      }
+    }
+
+    btn.addEventListener('click',handleProcess);
+    urlEl.addEventListener('keydown',e=>{ if(e.key==='Enter') handleProcess(); });
+  </script>
+</body>
+</html>
